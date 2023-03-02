@@ -146,9 +146,9 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
             await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
         else:
             media_group = []
-            for url in enumerate(urls):
-                media_group.append(InputMediaPhoto(media=url))
-            await update.message.reply_media_group(media=media_group)
+            for number, url in enumerate(urls):
+                media_group.append(InputMediaPhoto(media=url, caption=prompt))
+            await update.message.reply_media_group(media_group)
 
     except telegram.error.BadRequest:
         # answer has invalid characters, so we send it without parse_mode
