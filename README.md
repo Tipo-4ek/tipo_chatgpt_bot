@@ -25,7 +25,7 @@
 - Mongodb (latest)
 - Debian + docker-compose == 1.26.0
 - python-telegram-bot == 20.0a0
-- openai >= 0.26.1
+- openai (latest)
 - PyYAML == 6.0
 - pymongo == 4.3.3
 - python-dotenv == 0.21.0

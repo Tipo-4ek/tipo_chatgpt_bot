@@ -4,7 +4,6 @@ import traceback
 import html
 import json
 from datetime import datetime
-
 import telegram
 from telegram import Update, User, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
@@ -27,15 +26,15 @@ db = database.Database()
 logger = logging.getLogger(__name__)
 
 HELP_MESSAGE = """Commands:
-⚪ /retry – сгенерирует ответ заново
-⚪ /new - начать новую сессию диалога
-⚪ /mode – выбрать режим работы
-⚪ /balance – покажет количество потраченных токенов
+⚪ /mode – Выбрать режим работы
+⚪ /new – Начать новую сессию диалога (Если хотите забыть текущий контекст)
+⚪ /retry – Сгенеровать ответ заново
+⚪ /balance – Показать количество потраченных токенов. Только для статистики
 ⚪ /help – помгите вечина
 
-Напишите /mode для выбора режима чат-бота (Поболтать, Кодер, киноэксперт, художник)
+Напишите /mode для выбора режима чат-бота (Ассистент, кодер, киноэксперт, художник)
 ----
-Owner - @Tipo_4ek
+Owner – @Tipo_4ek
 """
 
 async def register_user_if_not_exists(update: Update, context: CallbackContext, user: User):
@@ -59,9 +58,9 @@ async def start_handle(update: Update, context: CallbackContext):
     reply_text = "Ку! Я <b>ChatGPT</b> бот. Юзаю OpenAI API\n\n"
     reply_text += HELP_MESSAGE
 
-    reply_text += "\nСпрашивай!"
-    
+    reply_text += "\n<b>По умолчанию выставлен мод Ассистента</b>. Он НЕ УМЕЕТ создавать код или картинки. У каждого режима чат-бота своя роль. Если хотите изменить режим ответов - используйте /mode.\n\n------\nP.S. Буду рад, если ты поставишь Звездочку на <a href='https://github.com/Tipo-4ek/tipo_chatgpt_bot'>Github</a>"
     await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
+    await show_chat_modes_handle(update, context)
 
 
 async def help_handle(update: Update, context: CallbackContext):
@@ -118,7 +117,7 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
             )
         else: # painter
-            answer, prompt, n_used_tokens, n_first_dialog_messages_removed, url, urls = chatgpt.ChatGPT().send_photo(
+            answer, prompt, n_used_tokens, n_first_dialog_messages_removed, first_url, urls = chatgpt.ChatGPT().send_photo(
                 message,
                 dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
                 chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
@@ -146,13 +145,19 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
             await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
         else:
             media_group = []
+            with open("log.log", "a") as log_file:
+                log_file.write(f"\ndebug --> Пришел list urls ==== {urls}")
             for number, url in enumerate(urls):
                 media_group.append(InputMediaPhoto(media=url, caption=prompt))
+
             await update.message.reply_media_group(media_group)
 
-    except telegram.error.BadRequest:
-        # answer has invalid characters, so we send it without parse_mode
-        await update.message.reply_text(answer)
+    # except telegram.error.BadRequest:
+    #     # answer has invalid characters, so we send it without parse_mode
+    #     await update.message.reply_text("Error:" + answer)
+    except Exception as e:
+        with open("log.log", "a") as log_file:
+                log_file.write(f"\ndebug --> Не удалось отправить картинку: {e}")
 
 
 
@@ -167,6 +172,11 @@ async def new_dialog_handle(update: Update, context: CallbackContext):
     chat_mode = db.get_user_attribute(user_id, "current_chat_mode")
     await update.message.reply_text(f"{chatgpt.CHAT_MODES[chat_mode]['welcome_message']}", parse_mode=ParseMode.HTML)
 
+
+async def admin_handle(update: Update, context: CallbackContext):
+    # secret stat
+    pass
+    
 
 async def show_chat_modes_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
@@ -189,6 +199,8 @@ async def set_chat_mode_handle(update: Update, context: CallbackContext):
     await query.answer()
 
     chat_mode = query.data.split("|")[1].split(' ')[0]
+    with open("log.log", "a") as log_file:
+                log_file.write(f"\ndebug --> Set mode to {update.callback_query.from_user.username} > {chat_mode}")
     db.set_user_attribute(user_id, "current_chat_mode", chat_mode)
     db.start_new_dialog(user_id)
 
@@ -209,7 +221,7 @@ async def show_balance_handle(update: Update, context: CallbackContext):
     n_used_tokens = db.get_user_attribute(user_id, "n_used_tokens")
     n_spent_dollars = n_used_tokens * (0.02 / 1000)
     text = f"Всего на один api key бесплатно выделено $18/3мес. <code>Картинка 1024х1024 весит $0.02</code>.\nДля текста (примерно):\n<code>1 токен - 4 латинских символа</code>\n<code>30 токенов - 1-2 предложения</code>\n<code>100 токенов - 75 букв</code>\n<b>В боте предусмотрена полуавтоматическая (командой в бота) ротация токена, в случае, если токен протух/кончилась квота.</b>\n\n"
-    text += f"Потрачено <b>{n_spent_dollars:.03f}$ (не считаются изображения)</b>\n" 
+    text += f"Потрачено <b>{n_spent_dollars:.03f}$ (текст + изображения)</b>\n" 
     text += f"Потрачено <b>{n_used_tokens}</b> токенов <i>(Стоимость: $0.02/1000 токенов).</i>\n"
 
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -268,6 +280,7 @@ def run_bot() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, message_handle))
     application.add_handler(CommandHandler("retry", retry_handle, filters=user_filter))
     application.add_handler(CommandHandler("new", new_dialog_handle, filters=user_filter))
+    application.add_handler(CommandHandler("admin", admin_handle, filters=user_filter))
     
     application.add_handler(CommandHandler("mode", show_chat_modes_handle, filters=user_filter))
     application.add_handler(CallbackQueryHandler(set_chat_mode_handle, pattern="^set_chat_mode"))
