@@ -24,20 +24,20 @@ def rotate_token():
 CHAT_MODES = {
     "assistant": {
         "name": "👩🏼‍🎓 assistant (Болтун)",
-        "welcome_message": "👩🏼‍🎓 Привет, я <b>ChatGPT assistant</b>. Можем пообщаться на разные темы. Я храню историю и отвечаю с контекстом. Чем могу быть полезен?",
-        "prompt_start": "As an advanced chatbot named ChatGPT, your primary goal is to assist users to the best of your ability. This may involve answering questions, providing helpful information, or completing tasks based on user input. In order to effectively assist users, it is important to be detailed and thorough in your responses. Use examples and evidence to support your points and justify your recommendations or solutions. Remember to always prioritize the needs and satisfaction of the user. Your ultimate goal is to provide a helpful and enjoyable experience for the user."
+        "welcome_message": "👩🏼‍🎓 Привет, я <b>ChatGPT assistant</b>. Модель gpt-3.5-turbo Можем пообщаться на разные темы. Я храню историю и отвечаю с контекстом. Чем могу быть полезен?",
+        "prompt_start": "As an advanced chatbot named Tipo ChatGPT, your primary goal is to assist users to the best of your ability. This may involve answering questions, providing helpful information, or completing tasks based on user input. In order to effectively assist users, it is important to be detailed and thorough in your responses. Use examples and evidence to support your points and justify your recommendations or solutions. Remember to always prioritize the needs and satisfaction of the user. Your ultimate goal is to provide a helpful and enjoyable experience for the user."
     },
 
     "code_assistant": {
         "name": "👩🏼‍💻 Code assistant (Кодер)",
         "welcome_message": "👩🏼‍💻 Привет, я <b>ChatGPT кодер</b>. Могу написать код на разных ЯП, отрефакторить твой код или задокументировать его. Будет лучше, если вначале кода ты будешь сообщать ЯП фразой <code># language python</code>. Но ничего страшного, если забудешь. Хинт: если ты напишешь на английском - ответ будет лучше.\nЧем могу быть полезен?",
-        "prompt_start": "As an advanced chatbot named ChatGPT, your primary goal is to assist users to write code. This may involve designing/writing/editing/describing code or providing helpful information. Where possible you should provide code examples to support your points and justify your recommendations or solutions. Make sure the code you provide is correct and can be run without errors. Be detailed and thorough in your responses. Your ultimate goal is to provide a helpful and enjoyable experience for the user. Write code inside <code>, </code> tags."
+        "prompt_start": "As an advanced chatbot named Tipo ChatGPT, your primary goal is to assist users to write code. This may involve designing/writing/editing/describing code or providing helpful information. Where possible you should provide code examples to support your points and justify your recommendations or solutions. Make sure the code you provide is correct and can be run without errors. Be detailed and thorough in your responses. Your ultimate goal is to provide a helpful and enjoyable experience for the user. Write code inside <code> and </code> tags."
     },
 
     "movie_expert": {
         "name": "🎬 Movie expert (Кино эксперт)",
         "welcome_message": "🎬 Привет, я <b>ChatGPT Кино эксперт</b>. Я знаю очень много фильмов/мультиков/сериалов/аниме всего мира. Могу угадать фильм по описанию, порассуждать о каких-то моментах или напомнить название фильма, если вы его забыли. Хинт: если ты напишешь на английском - ответ будет лучше. \nЧем могу быть полезен?",
-        "prompt_start": "As an advanced movie expert chatbot named ChatGPT, your primary goal is to assist users to the best of your ability. You can answer questions about movies, actors, directors, and more. You can recommend movies to users based on their preferences. You can discuss movies with users, and provide helpful information about movies. In order to effectively assist users, it is important to be detailed and thorough in your responses. Use examples and evidence to support your points and justify your recommendations or solutions. Remember to always prioritize the needs and satisfaction of the user. Your ultimate goal is to provide a helpful and enjoyable experience for the user."
+        "prompt_start": "As an advanced movie expert chatbot named Tipo ChatGPT, your primary goal is to assist users to the best of your ability. You can answer questions about movies, actors, directors, and more. You can recommend movies to users based on their preferences. You can discuss movies with users, and provide helpful information about movies. In order to effectively assist users, it is important to be detailed and thorough in your responses. Use examples and evidence to support your points and justify your recommendations or solutions. Remember to always prioritize the needs and satisfaction of the user. Your ultimate goal is to provide a helpful and enjoyable experience for the user."
     },
 
     "painter": {
@@ -60,27 +60,61 @@ class ChatGPT:
         n_dialog_messages_before = len(dialog_messages)
         answer = None
         while answer is None:
-            prompt = self._generate_prompt(message, dialog_messages, chat_mode)
+            with open("log.log", "a") as log_file:
+                log_file.write(f"\ndebug --> Юзер > {chat_mode} |>| {message}")
+        
+            prompt = self._generate_gpt_3_model_prompt(message, dialog_messages, chat_mode)
             try:
-                r = openai.Completion.create(
-                    engine="text-davinci-003",
-                    prompt=prompt,
-                    temperature=0.7,
-                    max_tokens=1000,
-                    top_p=1,
-                    frequency_penalty=0,
-                    presence_penalty=0,
+                # prompt = self._generate_prompt(message, dialog_messages, chat_mode)
+                # r = openai.Completion.create(
+                #     engine="text-davinci-003",
+                #     prompt=prompt,
+                #     temperature=0.7,
+                #     max_tokens=1000,
+                #     top_p=1,
+                #     frequency_penalty=0,
+                #     presence_penalty=0,
+                # )
+                # answer = r.choices[0].text
+                r = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=prompt
                 )
-                answer = r.choices[0].text
+                answer = r.choices[0].message.content
                 answer = self._postprocess_answer(answer)
                 
 
                 n_used_tokens = r.usage.total_tokens
 
+            except openai.error.RateLimitError as e: # billing hard limit has reached
+                print (e)
+                raise ValueError("Достигли бесплатного дневного лимита. Попробуйте еще раз. Если не получится - ротируйте токен /rotate.") from e
             except openai.error.InvalidRequestError as e:  # too many tokens
-                if len(dialog_messages) == 0:
-                    raise ValueError("Достигли бесплатного дневного лимита. Попробуйте еще раз. Если не получится - ротируйте токен /rotate.") from e
-
+                print (e)
+                raise ValueError(f"Случилось непредвиденное. Скорее всего кончилась квота или ваш запрос был отклонен safety system. В случае первого используйте /rotate и напишите любое сообщение. Если бот не ответит - зовите Tipo_4ek@. В случае второго - переформулируйте запрос, убрав из него запрещенные или 18+ тематики. Кстати - вот ошибка: {e}") from e
+            except openai.error.Timeout as e:
+                #Handle timeout error, e.g. retry or log
+                print(f"OpenAI API request timed out: {e}")
+                raise ValueError("API OpenAI Упало. Ждемс...") from e
+            except openai.error.APIError as e:
+                #Handle API error, e.g. retry or log
+                print(f"OpenAI API returned an API Error: {e}")
+                raise ValueError(f"OpenAI вернуло ошибку {e}") from e
+            except openai.error.APIConnectionError as e:
+                #Handle connection error, e.g. check network or log
+                print(f"OpenAI API request failed to connect: {e}")
+                raise ValueError(f"Не смогли соединиться с openAI. Либо сбои у них, либо у нашего сервера. Call Tipo_4ek@") from e
+            except openai.error.AuthenticationError as e:
+                #Handle authentication error, e.g. check credentials or log
+                print(f"OpenAI API request was not authorized: {e}")
+                raise ValueError(f"Стухла авторизация до openAI API. Call Tipo_4ek@") from e
+            except openai.error.PermissionError as e:
+                #Handle permission error, e.g. check scope or log
+                print(f"OpenAI API request was not permitted: {e}")
+                raise ValueError(f"Что-то с доступом до api. Call Tipo_4ek@") from e
+            except Exception as e:
+                print (e)
+                raise ValueError(e)
             
             # forget first message in dialog_messages
         dialog_messages = dialog_messages[1:]
@@ -98,6 +132,8 @@ class ChatGPT:
         while answer is None:
             prompt = message
             try:
+                with open("log.log", "a") as log_file:
+                    log_file.write(f"\ndebug --> Генерим картинку {prompt}")
                 r = openai.Image.create(
                     prompt=prompt,
                     n=2,
@@ -107,20 +143,45 @@ class ChatGPT:
                 urls = []
                 for data in r['data']:
                     urls.append(data['url'])
-                
-                answer = ""
-                answer = ' '.join(urls)
-                answer = self._postprocess_answer(answer)
+                with open("log.log", "a") as log_file:
+                    log_file.write(f"\ndebug --> собрали ссылки на картинки {urls}------------------")
+                answer = "Картинка"
+                #answer = ' '.join(urls)
+                #answer = self._postprocess_answer(answer)
                 
                 # $0.02 by 1 picture => 2000tokens == 1 picture.
                 n_used_tokens = 2000
+            
+            except openai.error.RateLimitError as e: # billing hard limit has reached
+                print (e)
+                raise ValueError("Достигли бесплатного дневного лимита в картинках. Попробуйте еще раз. Если не получится - ротируйте токен /rotate.") from e
+            except openai.error.InvalidRequestError as e:  # too many tokens
+                print (e)
+                raise ValueError("Случилось непредвиденное. Скорее всего кончилась квота и поможет ротация токена. Используйте /rotate и напишите любое сообщение. Если бот не ответит - зовите Tipo_4ek@") from e
+            except openai.error.Timeout as e:
+                #Handle timeout error, e.g. retry or log
+                print(f"OpenAI API request timed out: {e}")
+                raise ValueError("API OpenAI Упало. Ждемс...") from e
+            except openai.error.APIError as e:
+                #Handle API error, e.g. retry or log
+                print(f"OpenAI API returned an API Error: {e}")
+                raise ValueError(f"OpenAI вернуло ошибку {e}") from e
+            except openai.error.APIConnectionError as e:
+                #Handle connection error, e.g. check network or log
+                print(f"OpenAI API request failed to connect: {e}")
+                raise ValueError(f"Не смогли соединиться с openAI. Либо сбои у них, либо у нашего сервера. Call Tipo_4ek@") from e
+            except openai.error.AuthenticationError as e:
+                #Handle authentication error, e.g. check credentials or log
+                print(f"OpenAI API request was not authorized: {e}")
+                raise ValueError(f"Стухла авторизация до openAI API. Call Tipo_4ek@") from e
+            except openai.error.PermissionError as e:
+                #Handle permission error, e.g. check scope or log
+                print(f"OpenAI API request was not permitted: {e}")
+                raise ValueError(f"Что-то с доступом до api. Call Tipo_4ek@") from e
             except Exception as e:
                 print (e)
                 raise ValueError(e)
 
-            except openai.error.InvalidRequestError as e:  # too many tokens
-                if len(dialog_messages) == 0:
-                    raise ValueError("Достигли бесплатного дневного лимита в картинках. Попробуйте еще раз. Если не получится - ротируйте токен /rotate. Mode Assistant должен работать без проблем") from e
 
         # forget first message in dialog_messages
         dialog_messages = dialog_messages[1:]
@@ -132,7 +193,6 @@ class ChatGPT:
     def _generate_prompt(self, message, dialog_messages, chat_mode):
         prompt = CHAT_MODES[chat_mode]["prompt_start"]
         prompt += "\n\n"
-
         # add chat context
         if len(dialog_messages) > 0:
             prompt += "Chat:\n"
@@ -141,13 +201,35 @@ class ChatGPT:
                 prompt += f"ChatGPT: {dialog_message['bot']}\n"
 
         # current message
-        if (chat_mode != "painter"):
-            prompt += f"User: {message}\n"
-            prompt += "ChatGPT: "
-        else: # choose paint | need to extra parameters
-            prompt += f"User: {message}\n"
-            prompt += "ChatGPT: "
+        prompt += f"User: {message}\n"
+        prompt += "ChatGPT: "
         return prompt
+
+    def _generate_gpt_3_model_prompt(self, message, dialog_messages, chat_mode):
+        messages = []
+        message_dict = {}
+        message_dict["role"] = "system"
+        message_dict["content"] = CHAT_MODES[chat_mode]["prompt_start"]
+        messages.append(message_dict)
+
+        # add chat context
+        if len(dialog_messages) > 0:
+            for dialog_message in dialog_messages:
+                message_dict = {}
+                message_dict["role"] = "user"
+                message_dict["content"] = dialog_message['user']
+                messages.append(message_dict)
+                message_dict = {}
+                message_dict["role"] = "assistant"
+                message_dict["content"] = dialog_message['bot']
+                messages.append(message_dict)
+
+        # current message
+        message_dict = {}
+        message_dict["role"] = "user"
+        message_dict["content"] = message
+        messages.append(message_dict)
+        return messages
 
     def _postprocess_answer(self, answer):
         answer = answer

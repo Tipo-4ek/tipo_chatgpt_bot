@@ -1,9 +1,8 @@
 from typing import Optional, Any
-
+import json
 import pymongo
 import uuid
 from datetime import datetime
-
 import config
 
 
@@ -23,7 +22,13 @@ class Database:
                 raise ValueError(f"User {user_id} does not exist")
             else:
                 return False
+    
+    def show_all_users(self):
+        collection = self.user_collection.find()
+        result = json.dumps(list(collection), default=str, indent=4)
+        return result
         
+
     def add_new_user(
         self,
         user_id: int,
@@ -80,6 +85,9 @@ class Database:
     def get_user_attribute(self, user_id: int, key: str):
         self.check_if_user_exists(user_id, raise_exception=True)
         user_dict = self.user_collection.find_one({"_id": user_id})
+        with open("log.log", "a") as log_file:
+                log_file.write(f"\ndebug --> user_dict {user_dict}")
+
         if key not in user_dict:
             raise ValueError(f"User {user_id} does not have a value for {key}")
 
