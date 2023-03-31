@@ -4,6 +4,7 @@
 </p>
 
 ## Особенности
+- Асинхронные запросы
 - Быстро отвечает (3-5 сек)
 - Дневные лимиты вырезаны.
 - Умеет генерировать картинки по запросу
@@ -24,8 +25,9 @@
 - Python >= 3.7.x
 - Mongodb (latest)
 - Debian + docker-compose == 1.26.0
-- python-telegram-bot == 20.0a0
-- openai (latest)
+- python-telegram-bot[rate-limiter] == 20.1
+- openai >= 0.27.0
 - PyYAML == 6.0
 - pymongo == 4.3.3
 - python-dotenv == 0.21.0
+- jsons

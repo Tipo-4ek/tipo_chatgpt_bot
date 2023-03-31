@@ -5,12 +5,12 @@ import uuid
 from datetime import datetime
 import config
 
-
+last_user_printed = 0
 class Database:
     def __init__(self):
         self.client = pymongo.MongoClient(config.mongodb_uri)
         self.db = self.client["tipo_chatgpt_bot"]
-
+        last_user_printed = 0
         self.user_collection = self.db["user"]
         self.dialog_collection = self.db["dialog"]
 
@@ -73,7 +73,6 @@ class Database:
 
         # add new dialog
         self.dialog_collection.insert_one(dialog_dict)
-
         # update user's current dialog
         self.user_collection.update_one(
             {"_id": user_id},
@@ -85,8 +84,14 @@ class Database:
     def get_user_attribute(self, user_id: int, key: str):
         self.check_if_user_exists(user_id, raise_exception=True)
         user_dict = self.user_collection.find_one({"_id": user_id})
-        with open("log.log", "a") as log_file:
-                log_file.write(f"\ndebug --> user_dict {user_dict}")
+        global last_user_printed
+        if (last_user_printed != user_id): # Removing duplicate user_dict from log.log
+            print ("user_dict", user_dict)
+            with open("log.log", "a") as log_file:
+                    log_file.write(f"\ndebug --> user_dict {user_dict}")
+            last_user_printed = user_id
+        else: 
+            print ("user_dict", user_dict)
 
         if key not in user_dict:
             raise ValueError(f"User {user_id} does not have a value for {key}")
@@ -103,7 +108,7 @@ class Database:
         if dialog_id is None:
             dialog_id = self.get_user_attribute(user_id, "current_dialog_id")
 
-        dialog_dict = self.dialog_collection.find_one({"_id": dialog_id, "user_id": user_id})               
+        dialog_dict = self.dialog_collection.find_one({"_id": dialog_id, "user_id": user_id})
         return dialog_dict["messages"]
 
     def set_dialog_messages(self, user_id: int, dialog_messages: list, dialog_id: Optional[str] = None):

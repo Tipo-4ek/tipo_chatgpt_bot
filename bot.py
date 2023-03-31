@@ -2,6 +2,7 @@ import os
 import logging
 import traceback
 import html
+import asyncio
 import json
 from datetime import datetime
 import telegram
@@ -12,6 +13,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    AIORateLimiter,
     filters
 )
 from telegram.constants import ParseMode, ChatAction
@@ -20,6 +22,8 @@ import config
 import database
 import chatgpt
 
+semaphores_per_users = {}
+tasks_by_users = {}
 
 # setup
 db = database.Database()
@@ -47,9 +51,11 @@ async def register_user_if_not_exists(update: Update, context: CallbackContext, 
             last_name= user.last_name
         )
 
+    if user.id not in semaphores_per_users:
+        semaphores_per_users[user.id] = asyncio.Semaphore(1)
 
 async def start_handle(update: Update, context: CallbackContext):
-    await register_user_if_not_exists(update, context, update.message.from_user)
+    await register_user_if_not_exists(update, context, update.message.from_user)    
     user_id = update.message.from_user.id
     
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
@@ -65,6 +71,7 @@ async def start_handle(update: Update, context: CallbackContext):
 
 async def help_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
+    if await is_previous_message_not_answered_yet(update, context): return
     user_id = update.message.from_user.id
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
     await update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.HTML)
@@ -72,6 +79,7 @@ async def help_handle(update: Update, context: CallbackContext):
 
 async def retry_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
+    if await is_previous_message_not_answered_yet(update, context): return
     user_id = update.message.from_user.id
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
 
@@ -87,82 +95,130 @@ async def retry_handle(update: Update, context: CallbackContext):
 
 
 async def message_handle(update: Update, context: CallbackContext, message=None, use_new_dialog_timeout=True):
+    user_id = update.message.from_user.id
+    if await is_previous_message_not_answered_yet(update, context): return
     # check if message is edited
     if update.edited_message is not None:
         await edited_message_handle(update, context)
         return
         
     await register_user_if_not_exists(update, context, update.message.from_user)
-    user_id = update.message.from_user.id
+    # back compability
+    if user_id not in semaphores_per_users:
+        semaphores_per_users[user.id] = asyncio.Semaphore(1)
+    
+    async def message_handle_fn(message=None):
+        parse_mode = {
+                    "HTML": ParseMode.HTML,
+                    "markdown": ParseMode.MARKDOWN,
+                    "MARKDOWN_V2": ParseMode.MARKDOWN_V2
+                }[chatgpt.CHAT_MODES[db.get_user_attribute(user_id, "current_chat_mode")]['parse_mode']]
 
-    # new dialog timeout
-    if use_new_dialog_timeout:
-        if (datetime.now() - db.get_user_attribute(user_id, "last_interaction")).seconds > config.new_dialog_timeout:
-            db.start_new_dialog(user_id)
-            await update.message.reply_text("Начали новую сессию по таймауту ✅")
-    db.set_user_attribute(user_id, "last_interaction", datetime.now())
 
-    # send typing action
-    if (db.get_user_attribute(user_id, "current_chat_mode") == "painter"):
-        await update.message.chat.send_action(action="upload_photo")
-    else:
-        await update.message.chat.send_action(action="typing")
+        # new dialog timeout
+        if use_new_dialog_timeout:
+            if (datetime.now() - db.get_user_attribute(user_id, "last_interaction")).seconds > config.new_dialog_timeout:
+                db.start_new_dialog(user_id)
+                await update.message.reply_text("Начали новую сессию по таймауту ✅")
+        db.set_user_attribute(user_id, "last_interaction", datetime.now())
 
-    try:
-        message = message or update.message.text
-        if (db.get_user_attribute(user_id, "current_chat_mode") != "painter"):
-            answer, prompt, n_used_tokens, n_first_dialog_messages_removed = chatgpt.ChatGPT().send_message(
-                message,
-                dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
-                chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
-            )
-        else: # painter
-            answer, prompt, n_used_tokens, n_first_dialog_messages_removed, first_url, urls = chatgpt.ChatGPT().send_photo(
-                message,
-                dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
-                chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
-            )
-        # update user data
-        new_dialog_message = {"user": message, "bot": answer, "date": datetime.now()}
-        db.set_dialog_messages(
-            user_id,
-            db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
-            dialog_id=None
-        )
-        if (n_used_tokens != -1):
-            db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
+        # send typing action
+        if (db.get_user_attribute(user_id, "current_chat_mode") == "painter"):
+            await update.message.chat.send_action(action="upload_photo")
         else:
-            db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
+            await update.message.chat.send_action(action="typing")
+        try:
+            message = message or update.message.text
+            if (db.get_user_attribute(user_id, "current_chat_mode") != "painter"):
+                answer, prompt, n_used_tokens, n_first_dialog_messages_removed = await chatgpt.ChatGPT().send_message(
+                    message,
+                    dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
+                    chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
+                )
+            else: # painter
+                answer, prompt, n_used_tokens, n_first_dialog_messages_removed, first_url, urls = await chatgpt.ChatGPT().send_photo(
+                    message,
+                    dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
+                    chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
+                )
+            # update user data
+            new_dialog_message = {"user": message, "bot": answer, "date": datetime.now()}
+            db.set_dialog_messages(
+                user_id,
+                db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
+                dialog_id=None
+            )
+            if (n_used_tokens != -1):
+                db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
+            else:
+                db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
 
-    except Exception as e:
-        error_text = f"Чот пошло не так. {e}"
-        logger.error(error_text)
-        await update.message.reply_text(error_text)
-        return
+        except Exception as e:
+            if "is not subscriptable" in str(e):
+                error_text = "Где-то правили базу. Напиши /start еще раз, пожалуйста"
+            else:
+                error_text = f"Чот пошло не так. {e}"
+            logger.error(error_text)
+            await update.message.reply_text(error_text)
+            return
 
-    try:
-        if (db.get_user_attribute(user_id, "current_chat_mode") != "painter"):
-            await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
-        else:
-            media_group = []
+        try:
+            if (db.get_user_attribute(user_id, "current_chat_mode") != "painter"):
+                # got "answer"
+                user_parse_mode = chatgpt.CHAT_MODES[db.get_user_attribute(user_id, "current_chat_mode")]['parse_mode']
+                if (user_parse_mode in ["markdown", "MARKDOWN_V2"]):
+                    if len(answer) > 4096: # This does not guarantee that the final markdown markup will be < 4096 characters. The condition only allows you to try to send short messages in text, just long ones in a file. If the short message turns out to be rich markup, then exception handle will work
+                        file_to_upload = open("answer.txt", "w+")
+                        file_to_upload.write(answer)
+                        file_to_upload.close()
+                        file_to_upload = open("answer.txt", "rb")
+                        await update.message.reply_text("Сообщение оказалось слишком длинным, я отправлю его файлом")
+                        await update.message.reply_document(file_to_upload)
+                        file_to_upload.close()
+                    else:
+                        await update.message.reply_text(answer, parse_mode=parse_mode)
+                else:
+                    if len(answer) > 4096:
+                        for x in range(0, len(answer), 4096):
+                            await update.message.reply_text(answer[x:x+4096], parse_mode=parse_mode)
+                    else:
+                        await update.message.reply_text(answer, parse_mode=parse_mode)
+                
+                # await update.message.reply_text(answer, parse_mode=chatgpt.CHAT_MODES[db.get_user_attribute(user_id, "current_chat_mode")]['parse_mode'])
+            else:
+                media_group = []
+                with open("log.log", "a") as log_file:
+                    log_file.write(f"\ndebug --> Пришел list urls ==== {urls}")
+                for number, url in enumerate(urls):
+                    media_group.append(InputMediaPhoto(media=url, caption=prompt))
+
+                await update.message.reply_media_group(media_group)
+
+        except telegram.error.BadRequest as e:
+            curr_parse_mode = chatgpt.CHAT_MODES[db.get_user_attribute(user_id, "current_chat_mode")]['parse_mode']
+            print (f"Cant parse {curr_parse_mode}. send Raw string {e}")
+            await update.message.reply_text(answer)
+        except Exception as e:
             with open("log.log", "a") as log_file:
-                log_file.write(f"\ndebug --> Пришел list urls ==== {urls}")
-            for number, url in enumerate(urls):
-                media_group.append(InputMediaPhoto(media=url, caption=prompt))
+                    log_file.write(f"\ndebug --> Не удалось отправить картинку: {e}")
 
-            await update.message.reply_media_group(media_group)
+    async with semaphores_per_users[user_id]:
+        task = asyncio.create_task(message_handle_fn())
+        tasks_by_users[user_id] = task
 
-    # except telegram.error.BadRequest:
-    #     # answer has invalid characters, so we send it without parse_mode
-    #     await update.message.reply_text("Error:" + answer)
-    except Exception as e:
-        with open("log.log", "a") as log_file:
-                log_file.write(f"\ndebug --> Не удалось отправить картинку: {e}")
+        try:
+            await task
+        finally:
+            if user_id in tasks_by_users:
+                del tasks_by_users[user_id]
+        
 
 
 
 async def new_dialog_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
+    if await is_previous_message_not_answered_yet(update, context): return
+
     user_id = update.message.from_user.id
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
 
@@ -234,14 +290,24 @@ async def rotate_api_token_handle(update: Update, context: CallbackContext):
     n_used_tokens = db.get_user_attribute(user_id, "n_used_tokens")
     token_index = chatgpt.rotate_token()
     text = f"Ротация токена успешно произведена. Текущий токен - {token_index}\n"
-
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def edited_message_handle(update: Update, context: CallbackContext):
     text = "🥲Редактирование сообщений <b>пока что </b> Не поддержано"
     await update.edited_message.reply_text(text, parse_mode=ParseMode.HTML)
+    
 
+async def is_previous_message_not_answered_yet(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update, context, update.message.from_user)
+
+    user_id = update.message.from_user.id
+    if semaphores_per_users[user_id].locked():
+        text = "Подожди ответа на предыдущее сообщение и напиши вопрос еще раз."
+        await update.message.reply_text(text, reply_to_message_id=update.message.id, parse_mode=ParseMode.HTML)
+        return True
+    else:
+        return False
 
 async def error_handle(update: Update, context: CallbackContext) -> None:
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
@@ -264,6 +330,8 @@ def run_bot() -> None:
     application = (
         ApplicationBuilder()
         .token(config.telegram_token)
+        .concurrent_updates(True)
+        .rate_limiter(AIORateLimiter(max_retries=5))
         .build()
     )
     chatgpt.init_api_key()
