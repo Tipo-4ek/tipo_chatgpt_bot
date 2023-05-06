@@ -24,7 +24,7 @@
 - Добавлена команда /dialogs - теперь вы можете просматривать предыдущие диалоги и переключаться между контекстами
 
 <div align="center">
-<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/subscribe.png?raw=true" align="center" style="width: 30%" />
+<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/subscribe.png?raw=true" align="center" style="width: 60%" />
 </div>
 
 ## Команды бота
@@ -50,5 +50,5 @@
 
 
 <div align="center">
-<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/start_bot.png?raw=true" align="center" style="width: 30%" />
+<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/start_bot.png?raw=true" align="center" style="width: 50%" />
 </div>
