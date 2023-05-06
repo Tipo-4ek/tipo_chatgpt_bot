@@ -1,3 +1,8 @@
+'''Part of this code is under the MIT license
+MIT License
+
+Copyright (c) 2023 Karim Iskakov
+'''
 from typing import Optional, Any
 import json
 import pymongo
@@ -9,8 +14,7 @@ last_user_printed = 0
 class Database:
     def __init__(self):
         self.client = pymongo.MongoClient(config.mongodb_uri)
-        self.db = self.client["tipo_chatgpt_bot"]
-        last_user_printed = 0
+        self.db = self.client[config.mongo_client]
         self.user_collection = self.db["user"]
         self.dialog_collection = self.db["dialog"]
 
@@ -27,6 +31,12 @@ class Database:
         collection = self.user_collection.find()
         result = json.dumps(list(collection), default=str, indent=4)
         return result
+    
+    def get_dialogs(self, user_id):
+        collection = self.dialog_collection.find({"user_id": user_id}).sort("start_time", -1)
+        result = json.dumps(list(collection), default=str, indent=4)
+        return result
+
         
 
     def add_new_user(
@@ -71,6 +81,7 @@ class Database:
             "messages": []
         }
 
+
         # add new dialog
         self.dialog_collection.insert_one(dialog_dict)
         # update user's current dialog
@@ -86,12 +97,9 @@ class Database:
         user_dict = self.user_collection.find_one({"_id": user_id})
         global last_user_printed
         if (last_user_printed != user_id): # Removing duplicate user_dict from log.log
-            print ("user_dict", user_dict)
             with open("log.log", "a") as log_file:
                     log_file.write(f"\ndebug --> user_dict {user_dict}")
             last_user_printed = user_id
-        else: 
-            print ("user_dict", user_dict)
 
         if key not in user_dict:
             raise ValueError(f"User {user_id} does not have a value for {key}")
