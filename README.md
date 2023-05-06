@@ -4,7 +4,7 @@
 </p>
 
 <div align="center">
-<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/pictures.jpg?raw=true" align="center" style="width: 30%" />
+<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/pictures.jpg?raw=true" align="center" style="width: 60%" />
 </div>
 
 ## Особенности
@@ -50,5 +50,5 @@
 
 
 <div align="center">
-<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/start_bot.png?raw=true" align="center" style="width: 30%" />
+<img src="https://github.com/Tipo-4ek/tipo_chatgpt_bot/blob/master/static/start_bot.png?raw=true" align="center" style="width: 50%" />
 </div>
