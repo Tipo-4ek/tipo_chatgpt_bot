@@ -1,3 +1,12 @@
+'''
+-------------------------------------------
+  Copyright (c) 2023 Tipo-4ek
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  
+'''
+
 import config
 import openai
 
@@ -48,6 +57,7 @@ CHAT_MODES = {
         "welcome_message": "🖼️ Привет, я <b>ChatGPT художник основанный на DALL-E</b>. До MidJorney Мне еще далеко, но я могу сгенерировать картинку по твоему запросу. Попытайся писать очень подробные запросы. Чем больше подробностей - тем лучше результат. Хинт: если ты напишешь на английском - ответ будет лучше. Чем могу быть полезен?",
         "prompt_start": "",
         "parse_mode": "HTML"
+        # "prompt_start": "As an advanced chatbot named ChatGPT, your primary goal is to assist users to write paintings. This may involve designing or providing paintings. You need to provide painting scatch to support your points and justify your recommendations or solutions. Be detailed and thorough in your responses. Your ultimate goal is to provide a helpful and enjoyable experience for the user. Write result as png/jpg or jpeg file."
     },
 }
 
@@ -126,8 +136,8 @@ class ChatGPT:
                 print (e)
                 raise ValueError(e)
             
-            # forget first (bot+system) message in dialog_messages
-        dialog_messages = dialog_messages[2:]
+            # forget first message in dialog_messages
+        dialog_messages = dialog_messages[1:]
 
         n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
 
@@ -159,8 +169,8 @@ class ChatGPT:
                 #answer = ' '.join(urls)
                 #answer = self._postprocess_answer(answer)
                 
-                # $0.02 by 1 picture => 2000tokens == 1 picture.
-                n_used_tokens = 2000
+                # $0.02 by 1 picture => 20 000 tokens (gpt 3.5 turbo $0.002 per 1k) == 1 picture. 
+                n_used_tokens = 40000
             
             except openai.error.RateLimitError as e: # billing hard limit has reached
                 print (e)
@@ -246,3 +256,4 @@ class ChatGPT:
     def _postprocess_answer(self, answer):
         answer = answer
         return answer
+    
