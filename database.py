@@ -23,10 +23,19 @@ class Database:
             return True
         else:
             if raise_exception:
-                raise ValueError(f"User {user_id} does not exist")
+                raise ValueError(f"User {user_id} does not exist. Did You forget /start command?")
             else:
                 return False
-    
+        
+    def check_premium_expired(self, user_id: int):
+        if ((self.get_user_attribute(user_id, "is_premium") == True) and (self.get_user_attribute(user_id, "premium_expired") < datetime.today())):
+            self.set_user_attribute(user_id, "premium_expired", None)
+            self.set_user_attribute(user_id, "is_premium", False)
+            return False
+        else:
+            return True
+
+
     def show_all_users(self):
         collection = self.user_collection.find()
         result = json.dumps(list(collection), default=str, indent=4)
@@ -61,7 +70,11 @@ class Database:
             "current_dialog_id": None,
             "current_chat_mode": "assistant",
 
-            "n_used_tokens": 0
+            "is_donater": False,
+            "is_premium": False,
+            "premium_expired": None,
+            "n_used_tokens": 0,
+            "n_used_tokens_today":0
         }
 
         if not self.check_if_user_exists(user_id):
@@ -100,6 +113,9 @@ class Database:
             with open("log.log", "a") as log_file:
                     log_file.write(f"\ndebug --> user_dict {user_dict}")
             last_user_printed = user_id
+        else: 
+            print ("user_dict", user_dict)
+            pass
 
         if key not in user_dict:
             raise ValueError(f"User {user_id} does not have a value for {key}")
